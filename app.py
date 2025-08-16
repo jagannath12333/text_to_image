@@ -1,105 +1,141 @@
-# app.py
+import os
+import warnings
+
+# --- Pre-patch for cached_download removal (for older diffusers) ----
+try:
+    import huggingface_hub as hfh
+    if not hasattr(hfh, "cached_download"):
+        def cached_download(*args, **kwargs):
+            return hfh.hf_hub_download(*args, **kwargs)
+        hfh.cached_download = cached_download
+except Exception:
+    pass
+
 import gradio as gr
 import torch
-from diffusers import StableDiffusionPipeline
-from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
-
-from transformers import CLIPImageProcessor
-from peft import PeftModel
 from PIL import Image
-import os
+from diffusers import StableDiffusionPipeline
 
-# --- Configuration ---
-PRETRAINED_MODEL_NAME = "runwayml/stable-diffusion-v1-5"
-LORA_WEIGHTS_DIR = "MarketingModel_LoRA"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-# --- Global Model Loading ---
-# Load the model once when the script starts
+# Optional: LoRA (PEFT)
 try:
-    safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
-    feature_extractor = CLIPImageProcessor.from_pretrained("openai/clip-vit-large-patch14")
+    from peft import PeftModel
+    _HAS_PEFT = True
+except Exception:
+    _HAS_PEFT = False
 
+# ------------------- Config -------------------
+BASE_MODEL = os.getenv("BASE_MODEL", "runwayml/stable-diffusion-v1-5")
+LORA_DIR   = os.getenv("LORA_DIR", "./MarketingModel_LoRA")
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DTYPE  = torch.float16 if DEVICE == "cuda" else torch.float32
+IMG_SIZE = 384 if DEVICE == "cpu" else 512  # smaller on CPU for speed
+
+# ------------------- Load pipeline ------------
+print(f"Starting… torch={torch.__version__}, device={DEVICE}, dtype={DTYPE}")
+
+model_loaded = False
+pipe = None
+
+try:
     pipe = StableDiffusionPipeline.from_pretrained(
-        PRETRAINED_MODEL_NAME,
-        torch_dtype=torch.float16,
-        safety_checker=safety_checker,
-        feature_extractor=feature_extractor,
-        use_safetensors=True
+        BASE_MODEL,
+        torch_dtype=DTYPE,
+        safety_checker=None,      # disable safety checker for speed
+        feature_extractor=None,   # disable extra feature extractor
+        use_safetensors=True,
     )
-    pipe.unet = PeftModel.from_pretrained(pipe.unet, LORA_WEIGHTS_DIR)
+
+    if DEVICE == "cuda":
+        try:
+            pipe.enable_xformers_memory_efficient_attention()
+        except Exception as e:
+            print(f"Note: xFormers not enabled ({e})")
+    else:
+        pipe.enable_attention_slicing()
+
     pipe = pipe.to(DEVICE)
-    
-    if torch.cuda.is_available():
-        pipe.enable_xformers_memory_efficient_attention()
-    
-    print("Model loaded successfully.")
+
+    # ---- Load LoRA if present ----
+    if os.path.isdir(LORA_DIR):
+        has_adapter = os.path.exists(os.path.join(LORA_DIR, "adapter_model.safetensors"))
+        if has_adapter and _HAS_PEFT:
+            try:
+                pipe.unet = PeftModel.from_pretrained(pipe.unet, LORA_DIR)
+                print(f"Loaded PEFT LoRA from: {LORA_DIR}")
+            except Exception as e:
+                print(f"LoRA load failed (continuing without LoRA): {e}")
+        elif has_adapter and not _HAS_PEFT:
+            print("Found LoRA files but peft is not installed; continuing without LoRA.")
+        else:
+            print("No LoRA files found, continuing with base model.")
+    else:
+        print("LoRA dir not found; continuing with base model.")
+
     model_loaded = True
+    print("✅ Model loaded successfully.")
+
 except Exception as e:
-    print(f"Error loading the model: {e}")
+    print("❌ Error during model load:", repr(e))
     model_loaded = False
 
-# --- Image Generation Function for Gradio ---
-def generate_image(prompt, num_inference_steps, guidance_scale, seed):
-    """
-    Generates an image from a text prompt using the globally loaded pipeline.
-    """
-    if not model_loaded:
-        raise gr.Error("Model could not be loaded. Please check the logs.")
-        
-    generator = torch.Generator(device=DEVICE).manual_seed(int(seed))
-    
-    try:
-        image = pipe(
-            prompt=prompt,
-            num_inference_steps=int(num_inference_steps),
-            guidance_scale=guidance_scale,
-            generator=generator
-        ).images[0]
-        return image
-    except Exception as e:
-        raise gr.Error(f"An error occurred during image generation: {e}")
 
-# --- Gradio UI ---
+# ------------------- Inference fn -------------
+def generate_image(prompt, negative_prompt, steps, guidance, seed):
+    if not model_loaded:
+        raise gr.Error("Model failed to load. Check logs for details.")
+
+    generator = None
+    if seed is not None and int(seed) >= 0:
+        generator = torch.Generator(device=DEVICE).manual_seed(int(seed))
+
+    try:
+        out = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt if negative_prompt else None,
+            num_inference_steps=int(steps),
+            guidance_scale=float(guidance),
+            width=IMG_SIZE,
+            height=IMG_SIZE,
+            generator=generator,
+        )
+        return out.images[0]
+    except Exception as e:
+        raise gr.Error(f"Generation error: {e}")
+
+
+# ------------------- Gradio UI ----------------
 with gr.Blocks() as demo:
-    gr.Markdown("# 🛍️ AI-Powered Marketing Image Generator")
-    gr.Markdown("This tool uses a fine-tuned Stable Diffusion model to create professional product photography from your text descriptions.")
-    
+    gr.Markdown("## 🖼️ Face/Photo Generator (SD v1.5 + optional LoRA)")
+
     with gr.Row():
         with gr.Column(scale=1):
-            prompt_text = gr.Textbox(
-                label="Describe Your Product",
-                value="professional product photography of a coffee brand, studio lighting, high quality, 4k, on a clean background",
-                lines=4
+            prompt = gr.Textbox(
+                label="Prompt",
+                value="portrait photo of a person, soft lighting, 50mm, shallow depth of field, highly detailed, 4k",
+                lines=4,
             )
-            inference_steps = gr.Slider(
-                label="Inference Steps",
-                minimum=10,
-                maximum=100,
-                step=1,
-                value=50
+            negative = gr.Textbox(
+                label="Negative Prompt (optional)",
+                value="low quality, worst quality, bad anatomy, extra fingers, blurry",
+                lines=2,
             )
-            guidance_scale = gr.Slider(
-                label="Guidance Scale",
-                minimum=1.0,
-                maximum=20.0,
-                step=0.1,
-                value=7.5
-            )
-            seed_value = gr.Number(
-                label="Seed",
-                value=42,
-                precision=0
-            )
-            generate_button = gr.Button("✨ Generate Image", variant="primary")
-            
-        with gr.Column(scale=1):
-            output_image = gr.Image(label="Generated Image", type="pil")
+            steps = gr.Slider(10, 50, value=20, step=1, label="Inference Steps")
+            guidance = gr.Slider(1.0, 12.0, value=7.5, step=0.1, label="Guidance Scale")
+            seed = gr.Number(value=42, precision=0, label="Seed (>=0 fixed, -1 random)")
+            go = gr.Button("✨ Generate", variant="primary")
 
-    generate_button.click(
-        fn=generate_image,
-        inputs=[prompt_text, inference_steps, guidance_scale, seed_value],
-        outputs=output_image
+        with gr.Column(scale=1):
+            out_img = gr.Image(label="Output", type="pil")
+
+    def _wrap_seed(s):
+        s = int(s)
+        return None if s < 0 else s
+
+    go.click(
+        fn=lambda p, n, st, g, s: generate_image(p, n, st, g, _wrap_seed(s)),
+        inputs=[prompt, negative, steps, guidance, seed],
+        outputs=out_img,
     )
 
 if __name__ == "__main__":
