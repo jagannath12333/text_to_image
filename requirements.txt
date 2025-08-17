@@ -1,9 +1,7 @@
-streamlit
-torch
-torchvision
-torchaudio
-diffusers
-transformers
-accelerate
-safetensors
-
+streamlit==1.48.1
+torch==2.8.0+cpu
+diffusers==0.34.0
+transformers==4.55.2
+accelerate==1.10.0
+safetensors==0.6.2
+Pillow
