@@ -1,6 +1,7 @@
-torch
-transformers
-diffusers
-safetensors
-accelerate
-streamlit
+streamlit==1.48.1
+torch==2.8.0
+transformers==4.55.2
+diffusers==0.30.2
+accelerate==1.1.1
+safetensors==0.6.2
+pillow==11.3.0
