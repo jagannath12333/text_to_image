@@ -2,6 +2,11 @@ import streamlit as st
 import torch
 from diffusers import StableDiffusionPipeline
 from PIL import Image
+import subprocess
+import sys
+
+subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+
 
 # ----------------------------
 # App Title
@@ -70,3 +75,4 @@ if st.button("✨ Generate Image"):
                 file_name="marketing_image.png",
                 mime="image/png"
             )
+
