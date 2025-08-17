@@ -1,55 +1,26 @@
 import streamlit as st
-from diffusers import StableDiffusionPipeline
 import torch
+from diffusers import StableDiffusionPipeline
 
-# ----------------------------
-# Streamlit UI
-# ----------------------------
-st.set_page_config(page_title="Marketing & Advertising AI 📣", layout="centered")
-st.title("📣 AI Marketing Content Generator")
-st.write("Generate unique, brand-specific visuals for your marketing campaigns using AI.")
+st.title("🎨 Custom Text-to-Image Generator")
 
-# ----------------------------
-# Load Model
-# ----------------------------
+# Load your fine-tuned model
 @st.cache_resource
 def load_model():
-    model_id = "runwayml/stable-diffusion-v1-5"  # base model
+    model_path = "./"  # your fine-tuned model folder (contains model_index.json, etc.)
     pipe = StableDiffusionPipeline.from_pretrained(
-        model_id, 
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+        model_path,
+        torch_dtype=torch.float32
     )
-
-    # Load your LoRA adapter (files in repo root)
-    pipe.load_lora_weights(".", weight_name="adapter_model.safetensors")
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    pipe.to(device)
+    pipe = pipe.to("cpu")  # Streamlit Cloud has no GPU
     return pipe
 
 pipe = load_model()
 
-# ----------------------------
-# User Input
-# ----------------------------
-prompt = st.text_area(
-    "Enter your campaign idea 🎯",
-    placeholder="Example: A modern coffee shop ad with a smiling young woman holding a branded coffee cup"
-)
+# User input
+prompt = st.text_area("Enter your prompt:", "A scenic view of mountains during sunset")
 
-steps = st.slider("Inference Steps", 10, 50, 25)
-guidance = st.slider("Guidance Scale", 1.0, 15.0, 7.5)
-
-if st.button("✨ Generate Image"):
-    if prompt.strip() == "":
-        st.warning("Please enter a prompt.")
-    else:
-        with st.spinner("Generating your custom marketing visual..."):
-            image = pipe(
-                prompt, 
-                num_inference_steps=steps, 
-                guidance_scale=guidance
-            ).images[0]
-
-            st.image(image, caption="Generated Marketing Creative", use_column_width=True)
-            st.success("✅ Done! You can right-click to save your ad image.")
+if st.button("Generate Image"):
+    with st.spinner("Generating... (may take 1-3 minutes on CPU)"):
+        image = pipe(prompt).images[0]
+        st.image(image, caption="Generated Image", use_column_width=True)
