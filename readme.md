@@ -20,6 +20,8 @@ marketing-image-generator/
 ├─ README.md                    # This file
 ├─ .gitattributes               # (for Git LFS)
 └─ train.py (optional)          # Training script if you want to fine-tune
+
+In This case i have runned Face_Generator.ipynb and i run it in collab because of gpu then saved model and later created app.py and use that model to generate image finally this has been deployed in hugging face with requirement.txt, app.py and two models file. 
 ```
 
 > **Important:** `adapter_model.safetensors` is large — track it with **Git LFS** (instructions below).
