@@ -1,26 +1,47 @@
 import streamlit as st
-import torch
 from diffusers import StableDiffusionPipeline
+import torch
+from PIL import Image
 
-st.title("🎨 Custom Text-to-Image Generator")
+# Title
+st.title("🎨 Marketing Image Generator")
+st.write("Generate marketing visuals using your custom LoRA model.")
 
-# Load your fine-tuned model
-@st.cache_resource
-def load_model():
-    model_path = "./"  # your fine-tuned model folder (contains model_index.json, etc.)
-    pipe = StableDiffusionPipeline.from_pretrained(
-        model_path,
-        torch_dtype=torch.float32
-    )
-    pipe = pipe.to("cpu")  # Streamlit Cloud has no GPU
-    return pipe
+# Prompt input
+prompt = st.text_area("Enter your marketing prompt:", "High-quality coffee advertisement poster, minimal design")
 
-pipe = load_model()
-
-# User input
-prompt = st.text_area("Enter your prompt:", "A scenic view of mountains during sunset")
-
+# Generate button
 if st.button("Generate Image"):
-    with st.spinner("Generating... (may take 1-3 minutes on CPU)"):
-        image = pipe(prompt).images[0]
-        st.image(image, caption="Generated Image", use_column_width=True)
+    with st.spinner("Loading model and generating image..."):
+        try:
+            # Load base Stable Diffusion model
+            base_model = "runwayml/stable-diffusion-v1-5"
+
+            pipe = StableDiffusionPipeline.from_pretrained(
+                base_model,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            )
+
+            # Load your LoRA adapter
+            pipe.load_lora_weights("marketing_model")
+
+            # Use GPU if available
+            if torch.cuda.is_available():
+                pipe = pipe.to("cuda")
+
+            # Generate image
+            image: Image.Image = pipe(prompt).images[0]
+
+            # Show result
+            st.image(image, caption="Generated Marketing Image", use_container_width=True)
+
+            # Allow download
+            st.download_button(
+                label="Download Image",
+                data=image.tobytes(),
+                file_name="marketing_image.png",
+                mime="image/png",
+            )
+
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
