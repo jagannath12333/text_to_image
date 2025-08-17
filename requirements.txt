@@ -1,11 +1,16 @@
-torch==2.1.2
-torchvision==0.16.2
-transformers==4.41.2
+# CPU-compatible PyTorch (works with Python 3.13)
+torch==2.5.0
+torchvision==0.20.0
+
+# Core libs
 diffusers==0.27.2
-accelerate==0.29.3
-peft==0.7.1
-safetensors==0.4.3
-gradio==4.29.0
-Pillow==10.2.0
+transformers==4.37.2
+accelerate==0.26.0
+huggingface-hub==0.25.2
+
+# Extras
+peft==0.4.0
+safetensors==0.4.5
+Pillow==10.4.0
 numpy<2.0
-huggingface-hub==0.20.3
+streamlit==1.38.0
