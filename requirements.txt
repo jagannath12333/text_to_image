@@ -1,7 +1,5 @@
 torch
-transformers
 diffusers
-safetensors
+transformers
 accelerate
-Pillow
-streamlit
+safetensors
