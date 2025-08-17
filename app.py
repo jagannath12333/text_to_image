@@ -1,51 +1,36 @@
 import streamlit as st
-from diffusers import StableDiffusionPipeline
 import torch
+from diffusers import StableDiffusionPipeline
 from PIL import Image
-import io
 
-# Title
-st.title("🎨 Marketing Image Generator")
-st.write("Generate marketing visuals using your custom LoRA model.")
+st.set_page_config(page_title="Marketing AI Generator", layout="centered")
+st.title("🎨 Marketing Image Generator (CPU Mode)")
+st.write("Generate marketing visuals using your custom LoRA model (CPU-only).")
 
-# Cache pipeline so it's not reloaded every button click
 @st.cache_resource
-def load_pipeline():
-    base_model = "runwayml/stable-diffusion-v1-5"
+def load_model():
     pipe = StableDiffusionPipeline.from_pretrained(
-        base_model,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        "runwayml/stable-diffusion-v1-5",
+        torch_dtype=torch.float32,
+        safety_checker=None
     )
-    # Load your LoRA weights
     pipe.load_lora_weights("marketing_model")
-    if torch.cuda.is_available():
-        pipe = pipe.to("cuda")
+    pipe = pipe.to("cpu")
     return pipe
 
-# Prompt input
-prompt = st.text_area("Enter your marketing prompt:", "High-quality coffee advertisement poster, minimal design")
+pipe = load_model()
 
-# Generate button
+prompt = st.text_area("Enter your marketing prompt:", "Coffee ad poster, minimal design")
+steps = st.slider("Inference Steps", 10, 25, 15)
+guidance = st.slider("Guidance Scale", 1.0, 15.0, 7.5)
+
 if st.button("Generate Image"):
-    with st.spinner("Generating image..."):
-        try:
-            pipe = load_pipeline()
-            image: Image.Image = pipe(prompt).images[0]
+    if not prompt.strip():
+        st.warning("Please enter a prompt.")
+    else:
+        with st.spinner("Generating image (CPU may take 1-3 minutes)..."):
+            image: Image.Image = pipe(
+                prompt, num_inference_steps=steps, guidance_scale=guidance
+            ).images[0]
 
-            # Show result
-            st.image(image, caption="Generated Marketing Image", use_container_width=True)
-
-            # Save image to buffer for download
-            buf = io.BytesIO()
-            image.save(buf, format="PNG")
-            byte_im = buf.getvalue()
-
-            st.download_button(
-                label="Download Image",
-                data=byte_im,
-                file_name="marketing_image.png",
-                mime="image/png",
-            )
-
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
+            st.image(image, caption="Generated Marketing Image", use_column_width=True)
